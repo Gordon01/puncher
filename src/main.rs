@@ -53,10 +53,8 @@ fn client_request(puncher: UdpSocket, addr: SocketAddr, name: &str) -> std::io::
 
     // Receive server address or error from a puncher
     puncher.set_read_timeout(Some(Duration::new(5, 0)))?;
-    let len = puncher.recv(&mut buf).expect("receive from server");
-    let port = u16::from_be_bytes([buf[len-2], buf[len-1]]);
-    let ip = Ipv4Addr::new(buf[0], buf[1], buf[2], buf[3]);
-    let server_address = SocketAddr::from((ip, port));
+    puncher.recv(&mut buf).expect("receive from server");
+    let server_address = address_from_bytes(&buf);
     
     // Create a new socket to server
     println!("Connecting to server: {server_address}");
@@ -80,6 +78,16 @@ fn start_server(puncher: UdpSocket, addr: SocketAddr, name: &str) -> std::io::Re
     loop {
         let mut buf = [0; 1024];
         let (len, src) = puncher.recv_from(&mut buf)?;
+
+        if buf[0] == 0 {
+            // Client address received, punching hole to the client, since 
+            // he should already send us a welcome packet
+            let client_address = address_from_bytes(&buf[1..]);
+
+            puncher.send_to(&[0xAA], client_address).expect("punching client");
+            continue;
+        }
+
         let message = std::str::from_utf8(&buf[..len]).unwrap();
         println!("Peer: {src}, length: {len} bytes", );
         println!("{message}");
@@ -87,4 +95,11 @@ fn start_server(puncher: UdpSocket, addr: SocketAddr, name: &str) -> std::io::Re
         let string = String::from("Server says hi!");
         puncher.send_to(string.as_bytes(), src).expect("couldn't send data");
     }
+}
+
+fn address_from_bytes(buffer: &[u8]) -> SocketAddr {
+    let port = u16::from_be_bytes([buffer[4], buffer[5]]);
+    let ip = Ipv4Addr::new(buffer[0], buffer[1], buffer[2], buffer[3]);
+
+    SocketAddr::from((ip, port))
 }
