@@ -41,7 +41,7 @@ fn main() -> std::io::Result<()> {
 
 fn announcement(data: &[u8], servers: &mut HashMap<String, SocketAddr>, source: SocketAddr) {
     let name = String::from_utf8(data.to_vec()).unwrap();
-    log::info!("Adding server {name} as {source}");
+    log::info!("Adding {name} as {source}");
     servers.insert(name, source);
 }
 
@@ -52,10 +52,10 @@ fn request(
     socket: &UdpSocket,
 ) {
     let name = String::from_utf8(data.to_vec()).unwrap();
-    log::info!("Requested address of {name}");
+    let mut message = format!("Requested address of {name} by {source}, ");
 
     if let Some(addr) = servers.get(&name) {
-        log::info!("Found: {addr}");
+        message.push_str(&format!("found: {addr}"));
         let mut ip = match addr.ip() {
             IpAddr::V4(ip) => ip.octets().to_vec(),
             IpAddr::V6(ip) => ip.octets().to_vec(),
@@ -72,5 +72,9 @@ fn request(
         });
         ip.extend_from_slice(&source.port().to_be_bytes());
         socket.send_to(&ip, addr).expect("send client addr");
+    } else {
+        message.push_str("but not found");
     }
+
+    log::info!("{message}");
 }
