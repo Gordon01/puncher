@@ -71,10 +71,7 @@ fn client_request(puncher: UdpSocket, addr: SocketAddr, name: &str) -> std::io::
         .expect("couldn't send data");
     let mut buf = [0u8; 1024];
     let len = puncher.recv(&mut buf)?;
-    println!(
-        "Server said: {}",
-        std::str::from_utf8(&buf[1..len]).unwrap()
-    );
+    println!("Received from server: {:?}", &buf[..len]);
 
     let mut buffer = String::new();
     while let Ok(_) = std::io::stdin().read_line(&mut buffer) {
@@ -101,6 +98,7 @@ fn start_server(puncher: UdpSocket, addr: SocketAddr, name: &str) -> std::io::Re
             // he should already send us a welcome packet
             let client_address = address_from_bytes(&buf[1..]);
 
+            // 0xAA doesn't mean anything we just need to send something in order to fully traverse NAT
             puncher
                 .send_to(&[0xAA], client_address)
                 .expect("punching client");
