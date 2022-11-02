@@ -4,6 +4,7 @@ use std::{
 };
 
 use clap::Parser;
+use proto::Peer;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
