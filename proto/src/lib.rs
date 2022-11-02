@@ -17,10 +17,11 @@ impl From<u8> for Message {
     fn from(t: u8) -> Self {
         match t {
             0 => Message::Error,
-            1 => Message::Announcement,
-            2 => Message::Request,
-            3 => Message::ClientAddress,
-            4 => Message::ServerAddress,
+            1 => Message::Message,
+            2 => Message::Announcement,
+            3 => Message::Request,
+            4 => Message::ClientAddress,
+            5 => Message::ServerAddress,
             _ => Message::UnsupportedType,
         }
     }
