@@ -7,3 +7,9 @@ use serde::{Deserialize, Serialize};
 pub struct Peer {
     address: SocketAddr,
 }
+
+impl Peer {
+    pub fn new(address: SocketAddr) -> Self {
+        Self { address }
+    }
+}
