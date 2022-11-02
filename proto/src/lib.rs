@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 
 use serde::{Deserialize, Serialize};
 
+#[repr(u8)]
 #[derive(PartialEq, Eq, Debug)]
 pub enum Message {
     Error,
@@ -16,12 +17,7 @@ pub enum Message {
 impl From<u8> for Message {
     fn from(t: u8) -> Self {
         match t {
-            0 => Message::Error,
-            1 => Message::Message,
-            2 => Message::Announcement,
-            3 => Message::Request,
-            4 => Message::ClientAddress,
-            5 => Message::ServerAddress,
+            0..=5 => unsafe { std::mem::transmute(t) },
             _ => Message::UnsupportedType,
         }
     }
