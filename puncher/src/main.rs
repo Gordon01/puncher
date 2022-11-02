@@ -1,10 +1,10 @@
 use std::{
     collections::HashMap,
-    net::{IpAddr, SocketAddr, UdpSocket},
+    net::{SocketAddr, UdpSocket},
 };
 
 use clap::Parser;
-use proto::Peer;
+use proto::{Message, Peer};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -29,12 +29,11 @@ fn main() -> std::io::Result<()> {
         let mut buf = [0; 1024];
         let (len, src) = socket.recv_from(&mut buf)?;
 
-        let message = buf[0];
-        match message {
-            0 => announcement(&buf[1..len], &mut servers, src),
-            1 => request(&buf[1..len], &mut servers, src, &socket),
+        match Message::from(buf[0]) {
+            Message::Announcement => announcement(&buf[1..len], &mut servers, src),
+            Message::Request => request(&buf[1..len], &mut servers, src, &socket),
             _ => {
-                log::error!("Message unsupported, type = {message}");
+                log::error!("Message unsupported, type = {}", buf[0]);
             }
         }
     }
@@ -55,24 +54,16 @@ fn request(
     let name = String::from_utf8(data.to_vec()).unwrap();
     let mut message = format!("Requested address of {name} by {source}, ");
 
-    if let Some(addr) = servers.get(&name) {
-        message.push_str(&format!("found: {addr}"));
-        let mut ip = match addr.ip() {
-            IpAddr::V4(ip) => ip.octets().to_vec(),
-            IpAddr::V6(ip) => ip.octets().to_vec(),
-        };
-        ip.extend_from_slice(&addr.port().to_be_bytes());
+    if let Some(peer) = servers.get(&name) {
+        message.push_str(&format!("found: {peer}"));
 
+        let mut ip = Vec::from([Message::ServerAddress as u8]);
+        ip.extend(rmp_serde::to_vec(&Peer::new(peer.to_owned())).unwrap());
         socket.send_to(&ip, source).expect("send server addr");
 
-        // Also send to server client's address
-        let mut ip = Vec::from([0]);
-        ip.extend(match source.ip() {
-            IpAddr::V4(ip) => ip.octets().to_vec(),
-            IpAddr::V6(ip) => ip.octets().to_vec(),
-        });
-        ip.extend_from_slice(&source.port().to_be_bytes());
-        socket.send_to(&ip, addr).expect("send client addr");
+        let mut ip = Vec::from([Message::ClientAddress as u8]);
+        ip.extend(rmp_serde::to_vec(&Peer::new(source.to_owned())).unwrap());
+        socket.send_to(&ip, peer).expect("send client addr");
     } else {
         message.push_str("but not found");
     }
