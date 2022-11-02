@@ -2,8 +2,10 @@ use std::net::SocketAddr;
 
 use serde::{Deserialize, Serialize};
 
+#[derive(PartialEq, Eq, Debug)]
 pub enum Message {
     Error,
+    Message,
     Announcement,
     Request,
     ClientAddress,
@@ -27,7 +29,7 @@ impl From<u8> for Message {
 /// IP and port of client
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
 pub struct Peer {
-    address: SocketAddr,
+    pub address: SocketAddr,
 }
 
 impl Peer {
