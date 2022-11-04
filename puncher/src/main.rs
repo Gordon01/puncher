@@ -29,9 +29,9 @@ fn main() -> std::io::Result<()> {
         let mut buf = [0; 1024];
         let (len, src) = socket.recv_from(&mut buf)?;
 
-        match Message::from(buf[0]) {
-            Message::Announcement => announcement(&buf[1..len], &mut servers, src),
-            Message::Request => request(&buf[1..len], &mut servers, src, &socket),
+        match Message::from_repr(buf[0]) {
+            Some(Message::Announcement) => announcement(&buf[1..len], &mut servers, src),
+            Some(Message::Request) => request(&buf[1..len], &mut servers, src, &socket),
             _ => {
                 log::error!("Message unsupported, type = {}", buf[0]);
             }

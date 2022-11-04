@@ -62,7 +62,7 @@ fn client_request(puncher: UdpSocket, addr: SocketAddr, name: &str) -> std::io::
     puncher.set_read_timeout(Some(Duration::new(5, 0)))?;
     let mut buf = [0u8; 1024];
     let len = puncher.recv(&mut buf).expect("receive from server");
-    assert_eq!(Message::ServerAddress, Message::from(buf[0]));
+    assert_eq!(Some(Message::ServerAddress), Message::from_repr(buf[0]));
     let server = rmp_serde::from_slice::<Peer>(&buf[1..len]).unwrap();
 
     println!("Connecting to server: {}", server.address);
@@ -93,9 +93,8 @@ fn start_server(puncher: UdpSocket, addr: SocketAddr, name: &str) -> std::io::Re
     loop {
         let mut buf = [0; 1024];
         let (len, src) = puncher.recv_from(&mut buf)?;
-        let message = Message::from(buf[0]);
 
-        if message == Message::ClientAddress {
+        if Some(Message::ClientAddress) == Message::from_repr(buf[0]) {
             // Client address received, punching hole to the client, since
             // he should already send us a welcome packet
             let client = rmp_serde::from_slice::<Peer>(&buf[1..len]).unwrap();

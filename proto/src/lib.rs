@@ -1,8 +1,9 @@
 use std::net::SocketAddr;
 
+use enum_repr::EnumRepr;
 use serde::{Deserialize, Serialize};
 
-#[repr(u8)]
+#[EnumRepr(type = "u8", implicit = true)]
 #[derive(PartialEq, Eq, Debug)]
 pub enum Message {
     Error,
@@ -11,16 +12,6 @@ pub enum Message {
     Request,
     ClientAddress,
     ServerAddress,
-    UnsupportedType,
-}
-
-impl From<u8> for Message {
-    fn from(t: u8) -> Self {
-        match t {
-            0..=5 => unsafe { std::mem::transmute(t) },
-            _ => Message::UnsupportedType,
-        }
-    }
 }
 
 /// IP and port of client
