@@ -32,17 +32,19 @@ fn main() -> std::io::Result<()> {
         match Message::from_repr(buf[0]) {
             Some(Message::Announcement) => announcement(&buf[1..len], &mut servers, src),
             Some(Message::Request) => request(&buf[1..len], &mut servers, src, &socket),
-            _ => {
-                log::error!("Message unsupported, type = {}", buf[0]);
-            }
+            _ => log::error!("Message unsupported, type = {}", buf[0]),
         }
     }
 }
 
 fn announcement(data: &[u8], servers: &mut HashMap<String, SocketAddr>, source: SocketAddr) {
-    let name = String::from_utf8(data.to_vec()).unwrap();
-    log::info!("Adding {name} as {source}");
-    servers.insert(name, source);
+    match String::from_utf8(data.to_vec()) {
+        Ok(name) => {
+            log::info!("Adding {name} as {source}");
+            servers.insert(name, source);
+        }
+        Err(e) => log::error!("Can't parse name: {e}"),
+    }
 }
 
 fn request(
@@ -51,17 +53,26 @@ fn request(
     source: SocketAddr,
     socket: &UdpSocket,
 ) {
-    let name = String::from_utf8(data.to_vec()).unwrap();
+    let Ok(name) = String::from_utf8(data.to_vec()) else {
+        log::error!("Can't parse name");
+        return;
+    };
+
     let mut message = format!("Requested address of {name} by {source}, ");
 
     if let Some(peer) = servers.get(&name) {
         message.push_str(&format!("found: {peer}"));
 
-        let mut ip = Vec::from([Message::ServerAddress as u8]);
+        /* let msg = Message::new(Message::ServerAddress)
+         *      .data(rmp_serde::to_vec(&Peer::new(peer.to_owned())).unwrap())
+         *      .send(socket, source)
+         */
+
+        let mut ip = Vec::from([Message::ServerAddress.repr()]);
         ip.extend(rmp_serde::to_vec(&Peer::new(peer.to_owned())).unwrap());
         socket.send_to(&ip, source).expect("send server addr");
 
-        let mut ip = Vec::from([Message::ClientAddress as u8]);
+        let mut ip = Vec::from([Message::ClientAddress.repr()]);
         ip.extend(rmp_serde::to_vec(&Peer::new(source.to_owned())).unwrap());
         socket.send_to(&ip, peer).expect("send client addr");
     } else {
