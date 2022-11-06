@@ -1,9 +1,10 @@
 use std::{
-    net::{Ipv4Addr, SocketAddr, ToSocketAddrs, UdpSocket},
+    net::{SocketAddr, ToSocketAddrs, UdpSocket},
     time::Duration,
 };
 
 use clap::Parser;
+use proto::{Message, Packet, Peer};
 
 #[derive(clap::ValueEnum, Clone, Debug)]
 enum Mode {
@@ -32,11 +33,12 @@ struct Args {
 }
 
 fn main() -> std::io::Result<()> {
+    env_logger::init_from_env(env_logger::Env::new().default_filter_or("debug"));
     let args = Args::parse();
     println!("Connecting to {}:{}", args.nameserver, args.port);
 
     let puncher = UdpSocket::bind("0.0.0.0:2288").expect("couldn't bind to address");
-    let puncher_addr = "178.62.1.149:4200"
+    let puncher_addr = (args.nameserver, args.port)
         .to_socket_addrs()
         .unwrap()
         .next()
@@ -53,39 +55,37 @@ fn main() -> std::io::Result<()> {
 }
 
 fn client_request(puncher: UdpSocket, addr: SocketAddr, name: &str) -> std::io::Result<()> {
-    // 0x01 - Client announcement
-    let mut buf = Vec::from([0x01]);
-    buf.extend_from_slice(name.as_bytes());
-    puncher.send_to(&buf, addr).expect("couldn't send message");
+    Packet::new(Message::Request)
+        .add_raw_data(name.as_bytes())
+        .send(&puncher, addr)?;
 
     // Receive server address or error from a puncher
     puncher.set_read_timeout(Some(Duration::new(5, 0)))?;
-    puncher.recv(&mut buf).expect("receive from server");
-    let server_address = address_from_bytes(&buf);
-
-    // Create a new socket to server
-    println!("Connecting to server: {server_address}");
-    let string = String::from("This is a message from a client!");
-    puncher
-        .send_to(string.as_bytes(), server_address)
-        .expect("couldn't send data");
     let mut buf = [0u8; 1024];
+    let len = puncher.recv(&mut buf).expect("receive from server");
+    assert_eq!(Some(Message::ServerAddress), Message::from_repr(buf[0]));
+    let server = rmp_serde::from_slice::<Peer>(&buf[1..len]).unwrap();
+
+    println!("Connecting to server: {}", server.address);
+    Packet::new(Message::Message)
+        .add_raw_data("This is a message from a client!".as_bytes())
+        .send(&puncher, server.address)?;
+
     let len = puncher.recv(&mut buf)?;
     println!("Received from server: {:?}", &buf[..len]);
 
     let mut buffer = String::new();
-    while let Ok(_) = std::io::stdin().read_line(&mut buffer) {
-        puncher
-            .send_to(buffer.as_bytes(), server_address)
-            .expect("couldn't send data");
+    while std::io::stdin().read_line(&mut buffer).is_ok() {
+        Packet::new(Message::Message)
+            .add_raw_data(buffer.as_bytes())
+            .send(&puncher, server.address)?;
     }
 
     Ok(())
 }
 
 fn start_server(puncher: UdpSocket, addr: SocketAddr, name: &str) -> std::io::Result<()> {
-    // 0x00 - Server announcement
-    let mut buf = Vec::from([0x00]);
+    let mut buf = Vec::from([Message::Announcement as u8]);
     buf.extend_from_slice(name.as_bytes());
     puncher.send_to(&buf, addr).expect("couldn't send message");
 
@@ -93,32 +93,21 @@ fn start_server(puncher: UdpSocket, addr: SocketAddr, name: &str) -> std::io::Re
         let mut buf = [0; 1024];
         let (len, src) = puncher.recv_from(&mut buf)?;
 
-        if buf[0] == 0 {
-            // Client address received, punching hole to the client, since
-            // he should already send us a welcome packet
-            let client_address = address_from_bytes(&buf[1..]);
-
-            // 0xAA doesn't mean anything we just need to send something in order to fully traverse NAT
-            puncher
-                .send_to(&[0xAA], client_address)
-                .expect("punching client");
-            continue;
+        match Message::from_repr(buf[0]) {
+            Some(Message::ClientAddress) => {
+                // Client address received, punching hole to the client, since
+                // he should already send us a welcome packet
+                let client = rmp_serde::from_slice::<Peer>(&buf[1..len]).unwrap();
+                Packet::new(Message::Message).send(&puncher, client.address)?;
+                log::debug!("Punched hole to client: {}", client.address);
+            }
+            Some(Message::Message) => {
+                let message = std::str::from_utf8(&buf[..len]).unwrap();
+                println!("Received message from {}: {}", src, message);
+            }
+            _ => {
+                log::error!("Received unknown message from {}: {:?}", src, &buf[..len]);
+            }
         }
-
-        let message = std::str::from_utf8(&buf[..len]).unwrap();
-        println!("Peer: {src}, length: {len} bytes",);
-        println!("{message}");
-
-        let string = String::from("Server says hi!");
-        puncher
-            .send_to(string.as_bytes(), src)
-            .expect("couldn't send data");
     }
-}
-
-fn address_from_bytes(buffer: &[u8]) -> SocketAddr {
-    let port = u16::from_be_bytes([buffer[4], buffer[5]]);
-    let ip = Ipv4Addr::new(buffer[0], buffer[1], buffer[2], buffer[3]);
-
-    SocketAddr::from((ip, port))
 }

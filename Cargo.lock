@@ -84,6 +84,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "enum-repr"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bad30c9c0fa1aaf1ae5010dab11f1117b15d35faf62cda4bbbc53b9987950f18"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "env_logger"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -202,6 +213,8 @@ dependencies = [
 name = "proto"
 version = "0.1.0"
 dependencies = [
+ "enum-repr",
+ "rmp-serde",
  "serde",
  "serde_derive",
 ]
@@ -322,6 +335,8 @@ name = "user"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "env_logger",
+ "log",
  "proto",
  "rmp-serde",
 ]

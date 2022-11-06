@@ -1,10 +1,10 @@
 use std::{
     collections::HashMap,
-    net::{IpAddr, SocketAddr, UdpSocket},
+    net::{SocketAddr, UdpSocket},
 };
 
 use clap::Parser;
-use proto::Peer;
+use proto::{Message, Packet};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -29,21 +29,22 @@ fn main() -> std::io::Result<()> {
         let mut buf = [0; 1024];
         let (len, src) = socket.recv_from(&mut buf)?;
 
-        let message = buf[0];
-        match message {
-            0 => announcement(&buf[1..len], &mut servers, src),
-            1 => request(&buf[1..len], &mut servers, src, &socket),
-            _ => {
-                log::error!("Message unsupported, type = {message}");
-            }
+        match Message::from_repr(buf[0]) {
+            Some(Message::Announcement) => announcement(&buf[1..len], &mut servers, src),
+            Some(Message::Request) => request(&buf[1..len], &mut servers, src, &socket),
+            _ => log::error!("Message unsupported, type = {}", buf[0]),
         }
     }
 }
 
 fn announcement(data: &[u8], servers: &mut HashMap<String, SocketAddr>, source: SocketAddr) {
-    let name = String::from_utf8(data.to_vec()).unwrap();
-    log::info!("Adding {name} as {source}");
-    servers.insert(name, source);
+    match String::from_utf8(data.to_vec()) {
+        Ok(name) => {
+            log::info!("Adding {name} as {source}");
+            servers.insert(name, source);
+        }
+        Err(e) => log::error!("Can't parse name: {e}"),
+    }
 }
 
 fn request(
@@ -52,27 +53,25 @@ fn request(
     source: SocketAddr,
     socket: &UdpSocket,
 ) {
-    let name = String::from_utf8(data.to_vec()).unwrap();
+    let Ok(name) = String::from_utf8(data.to_vec()) else {
+        log::error!("Can't parse name");
+        return;
+    };
+
     let mut message = format!("Requested address of {name} by {source}, ");
 
-    if let Some(addr) = servers.get(&name) {
-        message.push_str(&format!("found: {addr}"));
-        let mut ip = match addr.ip() {
-            IpAddr::V4(ip) => ip.octets().to_vec(),
-            IpAddr::V6(ip) => ip.octets().to_vec(),
-        };
-        ip.extend_from_slice(&addr.port().to_be_bytes());
+    if let Some(peer) = servers.get(&name) {
+        message.push_str(&format!("found: {peer}"));
 
-        socket.send_to(&ip, source).expect("send server addr");
+        Packet::new(Message::ServerAddress)
+            .add_addr(peer)
+            .send(socket, source)
+            .expect("send server addr");
 
-        // Also send to server client's address
-        let mut ip = Vec::from([0]);
-        ip.extend(match source.ip() {
-            IpAddr::V4(ip) => ip.octets().to_vec(),
-            IpAddr::V6(ip) => ip.octets().to_vec(),
-        });
-        ip.extend_from_slice(&source.port().to_be_bytes());
-        socket.send_to(&ip, addr).expect("send client addr");
+        Packet::new(Message::ClientAddress)
+            .add_addr(&source)
+            .send(socket, peer)
+            .expect("send client addr");
     } else {
         message.push_str("but not found");
     }
