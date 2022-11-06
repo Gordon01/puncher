@@ -33,6 +33,7 @@ struct Args {
 }
 
 fn main() -> std::io::Result<()> {
+    env_logger::init_from_env(env_logger::Env::new().default_filter_or("debug"));
     let args = Args::parse();
     println!("Connecting to {}:{}", args.nameserver, args.port);
 
@@ -93,11 +94,12 @@ fn start_server(puncher: UdpSocket, addr: SocketAddr, name: &str) -> std::io::Re
         let (len, src) = puncher.recv_from(&mut buf)?;
 
         match Message::from_repr(buf[0]) {
-            Some(Message::Request) => {
+            Some(Message::ClientAddress) => {
                 // Client address received, punching hole to the client, since
                 // he should already send us a welcome packet
                 let client = rmp_serde::from_slice::<Peer>(&buf[1..len]).unwrap();
                 Packet::new(Message::Message).send(&puncher, client.address)?;
+                log::debug!("Punched hole to client: {}", client.address);
             }
             Some(Message::Message) => {
                 let message = std::str::from_utf8(&buf[..len]).unwrap();
