@@ -4,7 +4,7 @@ use std::{
 };
 
 use clap::Parser;
-use proto::{Message, Peer};
+use proto::{Message, Packet};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -63,18 +63,15 @@ fn request(
     if let Some(peer) = servers.get(&name) {
         message.push_str(&format!("found: {peer}"));
 
-        /* let msg = Message::new(Message::ServerAddress)
-         *      .data(rmp_serde::to_vec(&Peer::new(peer.to_owned())).unwrap())
-         *      .send(socket, source)
-         */
+        Packet::new(Message::ServerAddress)
+            .add_addr(peer)
+            .send(socket, source)
+            .expect("send server addr");
 
-        let mut ip = Vec::from([Message::ServerAddress.repr()]);
-        ip.extend(rmp_serde::to_vec(&Peer::new(peer.to_owned())).unwrap());
-        socket.send_to(&ip, source).expect("send server addr");
-
-        let mut ip = Vec::from([Message::ClientAddress.repr()]);
-        ip.extend(rmp_serde::to_vec(&Peer::new(source.to_owned())).unwrap());
-        socket.send_to(&ip, peer).expect("send client addr");
+        Packet::new(Message::ClientAddress)
+            .add_addr(&source)
+            .send(socket, peer)
+            .expect("send client addr");
     } else {
         message.push_str("but not found");
     }

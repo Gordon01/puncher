@@ -10,3 +10,4 @@ crate-type = ["rlib"]
 serde = { version = "1.0.147", features = ["derive"] }
 serde_derive = "1.0"
 enum-repr = "0.2.6"
+rmp-serde = "1.1.1"

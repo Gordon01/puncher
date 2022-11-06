@@ -4,7 +4,7 @@ use std::{
 };
 
 use clap::Parser;
-use proto::{Message, Peer};
+use proto::{Message, Packet, Peer};
 
 #[derive(clap::ValueEnum, Clone, Debug)]
 enum Mode {
@@ -54,9 +54,9 @@ fn main() -> std::io::Result<()> {
 }
 
 fn client_request(puncher: UdpSocket, addr: SocketAddr, name: &str) -> std::io::Result<()> {
-    let mut buf = Vec::from([Message::Request as u8]);
-    buf.extend_from_slice(name.as_bytes());
-    puncher.send_to(&buf, addr).expect("couldn't send message");
+    Packet::new(Message::Request)
+        .add_raw_data(name.as_bytes())
+        .send(&puncher, addr)?;
 
     // Receive server address or error from a puncher
     puncher.set_read_timeout(Some(Duration::new(5, 0)))?;
@@ -66,20 +66,18 @@ fn client_request(puncher: UdpSocket, addr: SocketAddr, name: &str) -> std::io::
     let server = rmp_serde::from_slice::<Peer>(&buf[1..len]).unwrap();
 
     println!("Connecting to server: {}", server.address);
-    let mut buf = Vec::from([Message::Message as u8]);
-    buf.extend_from_slice("This is a message from a client!".as_bytes());
-    puncher
-        .send_to(&buf, server.address)
-        .expect("couldn't send data");
-    let mut buf = [0u8; 1024];
+    Packet::new(Message::Message)
+        .add_raw_data("This is a message from a client!".as_bytes())
+        .send(&puncher, server.address)?;
+
     let len = puncher.recv(&mut buf)?;
     println!("Received from server: {:?}", &buf[..len]);
 
     let mut buffer = String::new();
-    while let Ok(_) = std::io::stdin().read_line(&mut buffer) {
-        puncher
-            .send_to(buffer.as_bytes(), server.address)
-            .expect("couldn't send data");
+    while std::io::stdin().read_line(&mut buffer).is_ok() {
+        Packet::new(Message::Message)
+            .add_raw_data(buffer.as_bytes())
+            .send(&puncher, server.address)?;
     }
 
     Ok(())
@@ -94,25 +92,20 @@ fn start_server(puncher: UdpSocket, addr: SocketAddr, name: &str) -> std::io::Re
         let mut buf = [0; 1024];
         let (len, src) = puncher.recv_from(&mut buf)?;
 
-        if Some(Message::ClientAddress) == Message::from_repr(buf[0]) {
-            // Client address received, punching hole to the client, since
-            // he should already send us a welcome packet
-            let client = rmp_serde::from_slice::<Peer>(&buf[1..len]).unwrap();
-
-            // 0xAA doesn't mean anything we just need to send something in order to fully traverse NAT
-            puncher
-                .send_to(&[0xAA], client.address)
-                .expect("punching client");
-            continue;
+        match Message::from_repr(buf[0]) {
+            Some(Message::Request) => {
+                // Client address received, punching hole to the client, since
+                // he should already send us a welcome packet
+                let client = rmp_serde::from_slice::<Peer>(&buf[1..len]).unwrap();
+                Packet::new(Message::Message).send(&puncher, client.address)?;
+            }
+            Some(Message::Message) => {
+                let message = std::str::from_utf8(&buf[..len]).unwrap();
+                println!("Received message from {}: {}", src, message);
+            }
+            _ => {
+                log::error!("Received unknown message from {}: {:?}", src, &buf[..len]);
+            }
         }
-
-        let message = std::str::from_utf8(&buf[..len]).unwrap();
-        println!("Peer: {src}, length: {len} bytes",);
-        println!("{message}");
-
-        let string = String::from("Server says hi!");
-        puncher
-            .send_to(string.as_bytes(), src)
-            .expect("couldn't send data");
     }
 }

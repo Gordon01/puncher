@@ -8,5 +8,6 @@ default-run = "user"
 
 [dependencies]
 clap = { version = "4.0.18", features = ["derive"] }
-proto = { path = "../proto"}
+proto = { path = "../proto" }
 rmp-serde = "1.1.1"
+log = "0.4.17"
